@@ -247,6 +247,65 @@ DkSortFileProxyModel::DkSortFileProxyModel(QObject *parent /* = 0 */)
 {
 }
 
+void DkSortFileProxyModel::setFilterText(const QString &filter)
+{
+    const QString filterText = filter.trimmed();
+
+    if (mFilterText == filterText)
+        return;
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    mFilterText = filterText;
+    endFilterChange(QSortFilterProxyModel::Direction::Rows);
+#else
+    mFilterText = filterText;
+    invalidateFilter();
+#endif
+}
+
+void DkSortFileProxyModel::setRootPath(const QString &rootPath)
+{
+    const QString root = QDir::cleanPath(rootPath);
+
+    if (mRootPath == root)
+        return;
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    mRootPath = root;
+    endFilterChange(QSortFilterProxyModel::Direction::Rows);
+#else
+    mRootPath = root;
+    invalidateFilter();
+#endif
+}
+
+bool DkSortFileProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
+{
+    if (mFilterText.isEmpty())
+        return true;
+
+    QModelIndex index = sourceModel()->index(sourceRow, 0, sourceParent);
+    auto *fileModel = qobject_cast<QFileSystemModel *>(sourceModel());
+
+    if (!fileModel || !index.isValid())
+        return true;
+
+    QFileInfo fileInfo = fileModel->fileInfo(index);
+
+    // keep the tree's root and its ancestors visible, otherwise the whole view would be empty
+    if (!mRootPath.isEmpty()) {
+        const QString path = QDir::cleanPath(fileInfo.absoluteFilePath());
+        const QString pathPrefix = path.endsWith('/') ? path : path + '/';
+
+        if (mRootPath == path || mRootPath.startsWith(pathPrefix))
+            return true;
+    }
+
+    return fileInfo.fileName().contains(mFilterText, Qt::CaseInsensitive);
+}
+
 bool DkSortFileProxyModel::lessThan(const QModelIndex &left, const QModelIndex &right) const
 {
     if (left.data().canConvert(QMetaType(QMetaType::QUrl))) {
@@ -316,6 +375,7 @@ void DkBrowseExplorer::scrollToCurrentClicked()
 void DkBrowseExplorer::setRootPath(const QString &root)
 {
     mRootPath = root;
+    mSortModel->setRootPath(root);
     mFileTree->setRootIndex(mSortModel->mapFromSource(mFileModel->index(root)));
     mFileModel->setRootPath(root);
     mRootPathLabel->setText(root);
@@ -413,10 +473,17 @@ void DkExplorer::createLayout()
     mFileTree->header()->setSortIndicator(0, Qt::AscendingOrder);
     mFileTree->header()->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
 
+    auto *filterEdit = new QLineEdit(this);
+    filterEdit->setPlaceholderText(tr("Filter Files"));
+    filterEdit->setClearButtonEnabled(true);
+    filterEdit->setAccessibleName(tr("Filter Files"));
+    connect(filterEdit, &QLineEdit::textChanged, mSortModel, &DkSortFileProxyModel::setFilterText);
+
     auto *widget = new QWidget(this);
     mLayout = new QVBoxLayout(widget);
     mLayout->setContentsMargins(0, 0, 0, 0);
     mLayout->setSpacing(0);
+    mLayout->addWidget(filterEdit);
     mLayout->addWidget(mFileTree);
     setWidget(widget);
 }

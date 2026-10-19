@@ -257,8 +257,17 @@ class DkSortFileProxyModel : public QSortFilterProxyModel
 public:
     explicit DkSortFileProxyModel(QObject *parent = nullptr);
 
+public slots:
+    void setFilterText(const QString &filter);
+    void setRootPath(const QString &rootPath);
+
 protected:
     bool lessThan(const QModelIndex &left, const QModelIndex &right) const override;
+    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
+
+private:
+    QString mFilterText;
+    QString mRootPath;
 };
 
 class DllCoreExport DkExplorer : public DkDockWidget
