@@ -116,7 +116,7 @@ std::optional<LoadThumbnailResult> loadThumbnail(const LoadThumbnailRequest &req
     }
 
     if (!fullThumb) {
-        if (fileInfo.isFromZip()) {
+        if (fileInfo.isFromContainer()) {
             std::unique_ptr<QIODevice> io = fileInfo.getIODevice();
             if (io)
                 ba.reset(new QByteArray(io->readAll()));

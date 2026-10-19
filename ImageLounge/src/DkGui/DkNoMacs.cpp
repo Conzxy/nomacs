@@ -1439,7 +1439,7 @@ void DkNoMacs::extractImagesFromArchive()
 
     auto *tab = getTabWidget();
     auto imgC = tab->getCurrentImage();
-    if (imgC && imgC->fileInfo().isFromZip())
+    if (imgC && imgC->fileInfo().isFromContainer())
         mArchiveExtractionDialog->setCurrentFile(imgC->dirPath(), true);
     else
         mArchiveExtractionDialog->setCurrentFile(tab->getCurrentFilePath(), false);
@@ -1713,7 +1713,7 @@ void DkNoMacs::openFileWith(QAction *action)
 
     // don't open the file, select it in the file manager or at least open parent directory
     if (appPath == DkAppManager::kOpenDirAppName) {
-        if (fileInfo.isFromZip()) {
+        if (fileInfo.isFromContainer()) {
             fileInfo = DkFileInfo(fileInfo.dirPath());
         }
 #ifdef Q_OS_WIN
@@ -1726,7 +1726,7 @@ void DkNoMacs::openFileWith(QAction *action)
 #endif
     }
 
-    if (fileInfo.isFromZip()) {
+    if (fileInfo.isFromContainer()) {
         fileInfo = extractToTmpFile(fileInfo);
     }
 

@@ -31,6 +31,7 @@
 #include "DkBaseViewPort.h"
 #include "DkBasicWidgets.h"
 #include "DkCentralWidget.h"
+#include "DkFileInfo.h"
 #include "DkImageStorage.h"
 #include "DkPluginManager.h"
 #include "DkSettings.h"
@@ -39,6 +40,10 @@
 #include "DkUtils.h"
 #include "DkViewPort.h"
 #include "DkWidgets.h"
+
+#ifdef WITH_LIBARCHIVE
+#include "ArchiveDecompressor.h"
+#endif
 
 #if defined(Q_OS_WIN) && !defined(SOCK_STREAM)
 #include <winsock2.h> // needed since libraw 0.16
@@ -4026,7 +4031,25 @@ void DkArchiveExtractionDialog::loadArchive(const QString &filePath)
         mDirPathEdit->setFocus();
     }
 
-    QStringList fileNameList = JlCompress::getFileList(lFilePath);
+    QStringList fileNameList;
+    if (DkFileInfo(lFilePath).isArchiveFile()) {
+#ifdef WITH_LIBARCHIVE
+        ArchiveCompressor ar(lFilePath.toStdString());
+        if (!ar.lastError().empty()) {
+            userFeedback(tr("The archive could not be opened: %1").arg(QString::fromStdString(ar.lastError())), true);
+            return;
+        }
+        std::vector<std::string> entries;
+        ar.listEntries(entries);
+        for (const auto &entry : entries)
+            fileNameList << QString::fromUtf8(entry);
+#else
+        userFeedback(tr("This archive format is not supported."), true);
+        return;
+#endif
+    } else {
+        fileNameList = JlCompress::getFileList(lFilePath);
+    }
 
     // remove the * in fileFilters
     QStringList fileFiltersClean = DkSettingsManager::param().app().browseFilters;
@@ -4121,6 +4144,8 @@ QStringList DkArchiveExtractionDialog::extractFilesWithProgress(const QString &f
     progressDialog.hide();
     progressDialog.show();
 
+    const bool useLibArchive = DkFileInfo(fileCompressed).isArchiveFile();
+
     QStringList extracted;
     for (int i = 0; i < files.count(); i++) {
         progressDialog.setValue(i);
@@ -4132,10 +4157,31 @@ QStringList DkArchiveExtractionDialog::extractFilesWithProgress(const QString &f
         else
             absPath = QDir(dir).absoluteFilePath(files.at(i));
 
-        if (JlCompress::extractFile(fileCompressed, files.at(i), absPath).isEmpty()) {
-            qDebug() << "unable to extract:" << files.at(i);
-            // return QStringList();
+        bool ok = false;
+        if (useLibArchive) {
+#ifdef WITH_LIBARCHIVE
+            ArchiveCompressor ar(fileCompressed.toStdString());
+            std::vector<uint8_t> content;
+            if (!ar.lastError().empty() || !ar.extractToMemory(files.at(i).toStdString(), content)) {
+                qDebug() << "unable to extract:" << files.at(i);
+            } else if (const QString outDir = QFileInfo(absPath).absolutePath();
+                       !QDir().mkpath(outDir) && !QFileInfo(outDir).isDir()) {
+                qDebug() << "unable to create directory:" << outDir;
+            } else {
+                QFile out(absPath);
+                if (out.open(QFile::WriteOnly)) {
+                    ok = out.write(reinterpret_cast<const char *>(content.data()),
+                                   static_cast<qint64>(content.size()))
+                        == static_cast<qint64>(content.size());
+                }
+            }
+#endif
+        } else {
+            ok = !JlCompress::extractFile(fileCompressed, files.at(i), absPath).isEmpty();
         }
+
+        if (!ok)
+            qDebug() << "unable to extract:" << files.at(i);
         extracted.append(absPath);
         if (progressDialog.wasCanceled()) {
             return QStringList("userCanceled");

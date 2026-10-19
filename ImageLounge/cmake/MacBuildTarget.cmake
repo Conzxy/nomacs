@@ -73,6 +73,7 @@ target_link_libraries(
     ${OpenCV_LIBS}
     ${TIFF_LIBRARIES}
     ${QUAZIP_LIBRARIES}
+    ${NOMACS_LIBARCHIVE}
 )
 
 add_dependencies(${BINARY_NAME} ${DLL_CORE_NAME} ${QUAZIP_DEPENDENCY} ${LIBQPSD_LIBRARY})

@@ -531,7 +531,7 @@ QDateTime DkCachedThumb::lastModified() const
     // Try to use the zip member modtime - repacking the zip won't drop thumbnails.
     // If we don't have that, fallback to .zip modtime
     QDateTime lastModified = mFileInfo.lastModified();
-    if (!lastModified.isValid() && mFileInfo.isFromZip()) {
+    if (!lastModified.isValid() && mFileInfo.isFromContainer()) {
         lastModified = QFileInfo(mFileInfo.dirPath()).lastModified();
     }
     return lastModified;

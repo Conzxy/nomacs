@@ -220,7 +220,7 @@ bool DkBasicLoader::loadGeneral(const QString &filePath, QSharedPointer<QByteArr
     }
     mFile = fileInfo.path();
 
-    if (fileInfo.isFromZip() && (!ba || ba->isEmpty())) {
+    if (fileInfo.isFromContainer() && (!ba || ba->isEmpty())) {
         auto io = fileInfo.getIODevice();
         if (!io) {
             qWarning() << "[Loader] failed to read:" << fileInfo.fileName();

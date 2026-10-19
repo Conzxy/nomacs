@@ -1314,7 +1314,7 @@ bool DkImageLoader::deleteFile()
     if (!mCurrentImage || !mCurrentImage->exists())
         return false;
 
-    if (mCurrentImage->fileInfo().isFromZip()) {
+    if (mCurrentImage->fileInfo().isFromContainer()) {
         emit showInfoSignal(tr("Sorry, deleting archived files is unsupported."));
         return false;
     }

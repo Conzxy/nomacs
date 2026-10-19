@@ -46,6 +46,7 @@ target_link_libraries(
     ${TIFF_LINK_LIBRARIES} # multip page tiff support (optional)
     $ENV{NOMACS_DEPENDENCIES}/lib/tiffxx.lib
     ${QUAZIP_LIBRARIES} # ZIP support (optional)
+    ${NOMACS_LIBARCHIVE} # RAR/archive support (optional)
 )
 
 add_dependencies(${BINARY_NAME} ${DLL_CORE_NAME})

@@ -261,6 +261,9 @@ void DkSettings::initFileFilters()
     app_p.containerFilters.append("Microsoft Word Document (*.docx)");
     app_p.containerFilters.append("Microsoft PowerPoint Document (*.pptx)");
     app_p.containerFilters.append("Microsoft Excel Document (*.xlsx)");
+#ifdef WITH_LIBARCHIVE
+    app_p.containerFilters.append("RAR Archive (*.rar)");
+#endif
 
     // kimageformats supports krita now, we don't need this and it is bugged
     // since it does not open the correct file inside the zip
@@ -271,6 +274,9 @@ void DkSettings::initFileFilters()
     // NOTE: if any suffixes have the same prefix, DkFileInfo::isContainer() will break
     // TODO: use vector for this, copy from the long form
     app_p.containerRawFilters = "*.zip *.cbz *.docx *.pptx *.xlsx";
+#ifdef WITH_LIBARCHIVE
+    app_p.containerRawFilters += " *.rar";
+#endif
 
     // exif filter as reported in #518 - afaik this is not a standard (typically it contains jpg/tiff)
     app_p.openFilters.append("EXIF (*.exif)");

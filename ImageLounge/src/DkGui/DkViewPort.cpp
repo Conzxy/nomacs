@@ -1552,7 +1552,7 @@ QMimeData *DkViewPort::createMimeForDrag() const
     DkFileInfo fileInfo(filePath);
 
     // Provide image buffer if file edited or cannot be opened by receiver
-    if (!img.isNull() && (mLoader->isEdited() || !fileInfo.exists() || fileInfo.isFromZip())) {
+    if (!img.isNull() && (mLoader->isEdited() || !fileInfo.exists() || fileInfo.isFromContainer())) {
         mimeData->setImageData(img);
     } else {
         QUrl fileUrl = QUrl::fromLocalFile(filePath);

@@ -1763,7 +1763,7 @@ void DkThumbScene::copyImages(const QMimeData *mimeData, const Qt::DropAction &d
         return;
     }
 
-    if (dirInfo.isZipFile()) {
+    if (dirInfo.isContainerFile()) {
         QMessageBox::information(DkUtils::getMainWindow(),
                                  tr("Copy Images"),
                                  tr("Copying to an archive is unsupported."));
@@ -2610,12 +2610,12 @@ void DkThumbScrollWidget::enableSelectionActions()
 {
     const QStringList files = mThumbsScene->getSelectedFiles();
     bool hasSelection = !files.isEmpty();
-    bool isFromZip = hasSelection && DkFileInfo(files[0]).isFromZip();
+    bool isFromContainer = hasSelection && DkFileInfo(files[0]).isFromContainer();
 
     DkActionManager &am = DkActionManager::instance();
     am.action(DkActionManager::preview_copy)->setEnabled(hasSelection);
-    am.action(DkActionManager::preview_rename)->setEnabled(hasSelection && !isFromZip);
-    am.action(DkActionManager::preview_delete)->setEnabled(hasSelection && !isFromZip);
+    am.action(DkActionManager::preview_rename)->setEnabled(hasSelection && !isFromContainer);
+    am.action(DkActionManager::preview_delete)->setEnabled(hasSelection && !isFromContainer);
     am.action(DkActionManager::preview_batch)->setEnabled(hasSelection);
     am.action(DkActionManager::preview_select_all)->setChecked(mThumbsScene->allThumbsSelected());
 }

@@ -434,11 +434,11 @@ void DkExplorer::setCurrentPath(const QString &path)
     // we could be passed a file, dir, zipfile, or zipfile member
     DkFileInfo info(path);
 
-    // we can't see inside zip with QFileSystemModel so select the container
-    QString newPath = info.isFromZip() ? info.dirPath() : info.path();
+    // we can't see inside a container with QFileSystemModel so select the container
+    QString newPath = info.isFromContainer() ? info.dirPath() : info.path();
 
     // expand folder if we're selecting a folder, otherwise its automatic
-    if (info.isDir() && !info.isZipFile())
+    if (info.isDir() && !info.isContainerFile())
         mFileTree->expand(mSortModel->mapFromSource(mFileModel->index(info.path())));
 
     // if we are setting the index do not behave as if user clicked an item

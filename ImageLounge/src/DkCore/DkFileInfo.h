@@ -29,6 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <memory>
 
+#ifdef WITH_LIBARCHIVE
+#include "ArchiveDecompressor.h"
+#endif
 #include "nmc_config.h"
 
 struct QuaZipFileInfo64;
@@ -92,6 +95,18 @@ public:
     QString pathInZip() const { return {}; }
     // clang-format on
 #endif
+    bool isFromArchive() const;
+    bool isArchiveFile() const;
+    QString pathInArchive() const;
+
+    // true if this is a member of any supported container (zip or libarchive)
+    bool isFromContainer() const;
+
+    // true if this is the container itself (zip, rar, ...)
+    bool isContainerFile() const;
+
+    // path of the member inside the container, or empty if not a container member
+    QString pathInContainer() const;
 
     // return i/o open for reading, or nullptr
     std::unique_ptr<QIODevice> getIODevice() const;
@@ -144,7 +159,7 @@ public:
     void stat();
 
 private:
-    // info of the container if isFromZip(), otherwise info of file/dir,
+    // info of the container if isFromContainer(), otherwise info of file/dir
     const QFileInfo &containerInfo() const;
 
 #ifdef WITH_QUAZIP
@@ -152,12 +167,19 @@ private:
 #else
     void readZipMetaData() const {};
 #endif
+    void readArchiveMetaData() const;
 
+#ifdef WITH_QUAZIP
     static DkFileInfoList readZipArchive(const QString &zipPath);
+#endif
+#ifdef WITH_LIBARCHIVE
+    static DkFileInfoList readArchive(const QString &arPath);
+#endif
 
     class ZipData
     {
     public:
+        ZipData() = default;
         explicit ZipData(const QString &encodedFilePath);
         ZipData(const QString &zipFilePath, const QuaZipFileInfo64 &info);
 
@@ -194,6 +216,52 @@ private:
         bool mHasMetaData = false;
     };
 
+#ifdef WITH_LIBARCHIVE
+    class ArchiveData
+    {
+    public:
+        ArchiveData() = default;
+        explicit ArchiveData(const QString &encodedFilePath);
+        ArchiveData(const QString &archiveFilePath, const ArchiveCompressor::EntryInfo &info);
+        static QString encodePath(const QString &filePath, const QString &memberPath);
+
+        // clang-format off
+        bool isMember() const          { return mIsMember; }
+        QString filePath() const       { return mArchiveFilePath; }
+        QString memberPath() const     { return mArchiveMemberPath; }
+        qint64 size() const            { return mSize; }
+        QDateTime lastModified() const { return mModified; }
+        QDateTime birthTime() const    { return mCreated; }
+        bool hasMetaData() const       { return mHasMetaData; }
+        // clang-format on
+
+        void clearMetaData();
+
+        // returns false if the member could not be found/read
+        bool ensureContent() const;
+        const std::vector<uint8_t> &content() const { return mContent; }
+
+        void readMetaData();
+
+    private:
+        void setMetaData(const ArchiveCompressor::EntryInfo &info);
+
+        QString mArchiveFilePath;
+        QString mArchiveMemberPath;
+
+        qint64 mSize = 0;
+        QDateTime mModified;
+        QDateTime mCreated;
+
+        bool mIsMember = false;
+        bool mHasMetaData = false;
+
+        // content is extracted lazily, when a member is opened
+        mutable std::vector<uint8_t> mContent;
+        mutable bool mContentLoaded = false;
+    };
+#endif
+
     class SharedData : public QSharedData
     {
         friend class DkFileInfo;
@@ -201,13 +269,21 @@ private:
     private:
         explicit SharedData(const QString &path);
         explicit SharedData(const QFileInfo &info);
+#ifdef WITH_QUAZIP
         SharedData(const QString &zipPath, const QuaZipFileInfo64 &info);
+#endif
+#ifdef WITH_LIBARCHIVE
+        SharedData(const QString &archivePath, const ArchiveCompressor::EntryInfo &info);
+#endif
 
-        QFileInfo mFileInfo; // isFromZip() => constructed from encodedPath()-formatted path
+        QFileInfo mFileInfo; // isFromContainer() => constructed from encodedPath()-formatted path
 #ifdef WITH_QUAZIP
         ZipData mZipData;
-        QFileInfo mContainerInfo; // isFromZip() => info of the .zip file itself
 #endif
+#ifdef WITH_LIBARCHIVE
+        ArchiveData mArData;
+#endif
+        QFileInfo mContainerInfo; // isFromContainer() => info of the container itself
     };
 
     QSharedDataPointer<SharedData> d;

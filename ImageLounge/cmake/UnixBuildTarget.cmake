@@ -50,6 +50,7 @@ target_link_libraries(
     ${QUAZIP_LIBRARIES}
     ${ZLIB_LIBRARY}
     ${LIBQPSD_LIBRARY}
+    ${NOMACS_LIBARCHIVE}
 )
 
 set_property(

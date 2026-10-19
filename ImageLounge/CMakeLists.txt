@@ -66,7 +66,23 @@ elseif(MSVC)
         set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${DEPENDENCY_PATH}/opencv/")
         set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${DEPENDENCY_PATH}/quazip/")
         set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${DEPENDENCY_PATH}/libraw/")
+        set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${DEPENDENCY_PATH}/libarchive/")
     endif()
+endif()
+
+# libarchive is used for RAR (and other non-zip) container support
+find_package(LibArchive QUIET)
+if(LibArchive_FOUND)
+    message(STATUS "LIBARCHIVE: found ${LibArchive_VERSION}, archive support enabled")
+    add_definitions(-DWITH_LIBARCHIVE)
+    if(TARGET LibArchive::LibArchive)
+        set(NOMACS_LIBARCHIVE LibArchive::LibArchive)
+    else()
+        set(NOMACS_LIBARCHIVE ${LibArchive_LIBRARIES})
+    endif()
+else()
+    message(STATUS "LIBARCHIVE: not found, archive/RAR support disabled")
+    set(NOMACS_LIBARCHIVE "")
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -133,6 +149,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/DkGui
     ${TIFF_INCLUDE_DIR}
     ${TIFF_CONFIG_DIR}
+    ${LibArchive_INCLUDE_DIRS}
     ${QUAZIP_INCLUDE_DIR}
     ${QUAZIP_ZLIB_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libqpsd # needed for linux psd hack

@@ -351,8 +351,8 @@ bool DkUtils::compDateModified(const DkFileInfo &lhf, const DkFileInfo &rhf)
 
 bool DkUtils::compFilename(const DkFileInfo &lhf, const DkFileInfo &rhf)
 {
-    if (lhf.isFromZip() && rhf.isFromZip())
-        return compLogicQString(lhf.pathInZip(), rhf.pathInZip());
+    if (lhf.isFromContainer() && rhf.isFromContainer())
+        return compLogicQString(lhf.pathInContainer(), rhf.pathInContainer());
     else
         return compLogicQString(lhf.fileName(), rhf.fileName());
 }
@@ -803,7 +803,7 @@ QString DkUtils::nowString()
 
 bool DkUtils::isLoadableByContent(const DkFileInfo &file)
 {
-    if (file.isFromZip()) // unsupported for performance
+    if (file.isFromContainer()) // unsupported for performance
         return false;
     if (!file.isFile())
         return false;

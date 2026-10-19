@@ -28,19 +28,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "DkTimer.h"
 #include "DkUtils.h"
 
+#ifdef WITH_LIBARCHIVE
+#include "ArchiveDecompressor.h"
+#endif
+
+#include <QBuffer>
+#include <QDebug>
 #include <QDir>
 #include <QRegularExpression>
 #include <QStringBuilder>
 
 #ifdef WITH_QUAZIP
 #include <quazip/JlCompress.h>
-#endif
-
-// macro to avoid #ifdef spaghetti
-#ifdef WITH_QUAZIP
-#define IF_FROM_ZIP(x, y) (isFromZip() ? (x) : (y))
-#else
-#define IF_FROM_ZIP(x, y) (y)
 #endif
 
 namespace nmc
@@ -126,21 +125,154 @@ void DkFileInfo::ZipData::readMetaData()
 }
 #endif
 
-#ifdef WITH_QUAZIP
+#ifdef WITH_LIBARCHIVE
+
+static constexpr QStringView ArchiveMarker = u"&/";
+
+DkFileInfo::ArchiveData::ArchiveData(const QString &encodedFilePath)
+{
+    qsizetype index = encodedFilePath.indexOf(ArchiveMarker);
+    if (index > 0) {
+        mIsMember = true;
+        mArchiveFilePath = encodedFilePath.mid(0, index);
+        mArchiveMemberPath = encodedFilePath.mid(index + ArchiveMarker.length());
+    }
+}
+
+DkFileInfo::ArchiveData::ArchiveData(const QString &archiveFilePath, const ArchiveCompressor::EntryInfo &info)
+{
+    mIsMember = true;
+    mArchiveFilePath = archiveFilePath;
+    mArchiveMemberPath = QString::fromUtf8(info.path);
+    setMetaData(info);
+}
+
+QString DkFileInfo::ArchiveData::encodePath(const QString &filePath, const QString &memberPath)
+{
+    Q_ASSERT(!memberPath.startsWith('/'));
+    Q_ASSERT(QFileInfo(filePath).absoluteFilePath() == filePath);
+
+    return filePath % ArchiveMarker % memberPath;
+}
+
+void DkFileInfo::ArchiveData::readMetaData()
+{
+    if (!mIsMember || mHasMetaData)
+        return;
+
+    ArchiveCompressor ar(mArchiveFilePath.toStdString());
+    if (!ar.lastError().empty()) {
+        qWarning() << "[FileInfo] archive: open failed:" << mArchiveFilePath
+                   << QString::fromStdString(ar.lastError());
+        return;
+    }
+
+    for (auto it = ar.begin(); it != ar.end(); ++it) {
+        if (QString::fromUtf8(it->path()) == mArchiveMemberPath) {
+            setMetaData(it->info());
+            return;
+        }
+    }
+
+    qWarning() << "[FileInfo] archive: member not found:" << mArchiveMemberPath;
+}
+
+void DkFileInfo::ArchiveData::clearMetaData()
+{
+    mHasMetaData = false;
+    mContentLoaded = false;
+    mContent.clear();
+}
+
+bool DkFileInfo::ArchiveData::ensureContent() const
+{
+    if (!mIsMember)
+        return false;
+    if (mContentLoaded)
+        return true;
+
+    ArchiveCompressor ar(mArchiveFilePath.toStdString());
+    if (!ar.lastError().empty()) {
+        qWarning() << "[FileInfo] archive: open failed:" << mArchiveFilePath
+                   << QString::fromStdString(ar.lastError());
+        return false;
+    }
+
+    std::vector<uint8_t> content;
+    if (!ar.extractToMemory(mArchiveMemberPath.toStdString(), content)) {
+        qWarning() << "[FileInfo] archive: extract failed:" << mArchiveMemberPath
+                   << QString::fromStdString(ar.lastError());
+        return false;
+    }
+
+    mContent = std::move(content);
+    mContentLoaded = true;
+    return true;
+}
+
+void DkFileInfo::ArchiveData::setMetaData(const ArchiveCompressor::EntryInfo &info)
+{
+    mSize = info.size;
+
+    const auto toDateTime = [](const ArchiveCompressor::TimeInfo &time) {
+        if (!time.isSet())
+            return QDateTime{};
+        const qint64 msecs = static_cast<qint64>(time.sec) * 1000 + time.nsec / 1000000;
+        return QDateTime::fromMSecsSinceEpoch(msecs, Qt::UTC).toLocalTime();
+    };
+
+    mModified = toDateTime(info.mtime);
+    if (!mModified.isValid())
+        mModified = toDateTime(info.ctime);
+
+    mCreated = toDateTime(info.birthtime);
+    if (!mCreated.isValid())
+        mCreated = toDateTime(info.ctime);
+
+    mHasMetaData = true;
+}
+
+#endif // WITH_LIBARCHIVE
 
 DkFileInfo::SharedData::SharedData(const QString &path)
     : mFileInfo(path)
+#ifdef WITH_QUAZIP
     , mZipData(mFileInfo.absoluteFilePath())
-    , mContainerInfo(mZipData.isZipMember() ? mZipData.zipFilePath() : QString{})
+#endif
+#ifdef WITH_LIBARCHIVE
+    , mArData(mFileInfo.absoluteFilePath())
+#endif
 {
+#ifdef WITH_QUAZIP
+    if (mZipData.isZipMember())
+        mContainerInfo = QFileInfo(mZipData.zipFilePath());
+#endif
+#ifdef WITH_LIBARCHIVE
+    if (mArData.isMember())
+        mContainerInfo = QFileInfo(mArData.filePath());
+#endif
 }
 
 DkFileInfo::SharedData::SharedData(const QFileInfo &info)
     : mFileInfo(info)
+#ifdef WITH_QUAZIP
     , mZipData(mFileInfo.absoluteFilePath())
-    , mContainerInfo(mZipData.isZipMember() ? mZipData.zipFilePath() : QString{})
+#endif
+#ifdef WITH_LIBARCHIVE
+    , mArData(mFileInfo.absoluteFilePath())
+#endif
 {
+#ifdef WITH_QUAZIP
+    if (mZipData.isZipMember())
+        mContainerInfo = QFileInfo(mZipData.zipFilePath());
+#endif
+#ifdef WITH_LIBARCHIVE
+    if (mArData.isMember())
+        mContainerInfo = QFileInfo(mArData.filePath());
+#endif
 }
+
+#ifdef WITH_QUAZIP
 
 DkFileInfo::SharedData::SharedData(const QString &zipPath, const QuaZipFileInfo64 &info)
     : mFileInfo(ZipData::encodePath(zipPath, info.name))
@@ -149,19 +281,18 @@ DkFileInfo::SharedData::SharedData(const QString &zipPath, const QuaZipFileInfo6
 {
 }
 
-#else
+#endif // WITH_QUAZIP
 
-DkFileInfo::SharedData::SharedData(const QString &path)
-    : mFileInfo(path)
+#ifdef WITH_LIBARCHIVE
+
+DkFileInfo::SharedData::SharedData(const QString &archivePath, const ArchiveCompressor::EntryInfo &info)
+    : mFileInfo(ArchiveData::encodePath(archivePath, QString::fromUtf8(info.path)))
+    , mArData(archivePath, info)
+    , mContainerInfo(archivePath)
 {
 }
 
-DkFileInfo::SharedData::SharedData(const QFileInfo &info)
-    : mFileInfo(info)
-{
-}
-
-#endif
+#endif // WITH_LIBARCHIVE
 
 DkFileInfo::DkFileInfo(const QString &path)
     : d(new SharedData(path))
@@ -199,7 +330,14 @@ bool DkFileInfo::isFromZip() const
 
 bool DkFileInfo::isZipFile() const
 {
-    return isFromZip() ? false : isContainer(d->mFileInfo);
+    if (isFromZip() || isArchiveFile())
+        return false;
+
+    // never send a rar through QuaZip
+    if (d->mFileInfo.suffix().compare(u"rar", Qt::CaseInsensitive) == 0)
+        return false;
+
+    return isContainer(d->mFileInfo);
 }
 
 QString DkFileInfo::pathInZip() const
@@ -221,6 +359,65 @@ void DkFileInfo::readZipMetaData() const
 
 #endif
 
+bool DkFileInfo::isFromArchive() const
+{
+#ifdef WITH_LIBARCHIVE
+    return d->mArData.isMember();
+#else
+    return false;
+#endif
+}
+
+bool DkFileInfo::isArchiveFile() const
+{
+#ifdef WITH_LIBARCHIVE
+    if (isFromArchive())
+        return false;
+    return d->mFileInfo.suffix().compare(u"rar", Qt::CaseInsensitive) == 0 && isContainer(d->mFileInfo);
+#else
+    return false;
+#endif
+}
+
+QString DkFileInfo::pathInArchive() const
+{
+#ifdef WITH_LIBARCHIVE
+    return d->mArData.memberPath();
+#else
+    return {};
+#endif
+}
+
+bool DkFileInfo::isFromContainer() const
+{
+    return isFromZip() || isFromArchive();
+}
+
+bool DkFileInfo::isContainerFile() const
+{
+    return isZipFile() || isArchiveFile();
+}
+
+QString DkFileInfo::pathInContainer() const
+{
+    if (isFromZip())
+        return pathInZip();
+    if (isFromArchive())
+        return pathInArchive();
+    return {};
+}
+
+void DkFileInfo::readArchiveMetaData() const
+{
+#ifdef WITH_LIBARCHIVE
+    // same lazy pattern as readZipMetaData(): dereferencing detaches if needed
+    if (isFromArchive() && !d->mArData.hasMetaData()) {
+        auto *dataPtr = const_cast<QSharedDataPointer<SharedData> *>(&d);
+        (*dataPtr)->mArData.readMetaData();
+    }
+#endif
+}
+
 std::unique_ptr<QIODevice> DkFileInfo::getIODevice() const
 {
     std::unique_ptr<QIODevice> io;
@@ -229,11 +426,26 @@ std::unique_ptr<QIODevice> DkFileInfo::getIODevice() const
 #ifdef WITH_QUAZIP
         io = std::make_unique<QuaZipFile>(d->mZipData.zipFilePath(), d->mZipData.zipMemberPath());
 #endif
+    } else if (isFromArchive()) {
+#ifdef WITH_LIBARCHIVE
+        auto *dataPtr = const_cast<QSharedDataPointer<SharedData> *>(&d);
+        auto &archiveData = (*dataPtr)->mArData;
+        if (!archiveData.ensureContent()) {
+            qWarning() << "[FileInfo] archive: could not read member:" << path();
+            return {};
+        }
+
+        const auto &content = archiveData.content();
+        auto buffer = std::make_unique<QBuffer>();
+        buffer->setData(QByteArray(reinterpret_cast<const char *>(content.data()),
+                                   static_cast<qsizetype>(content.size())));
+        io = std::move(buffer);
+#endif
     } else {
         io = std::make_unique<QFile>(path());
     }
 
-    Q_ASSERT(io != nullptr); // isFromZip()==false if !WITH_QUAZIP
+    Q_ASSERT(io != nullptr);
 
     if (!io->open(QIODevice::ReadOnly)) {
         qWarning() << "[FileInfo] failed to open i/o" << path() << io->errorString();
@@ -250,7 +462,7 @@ QString DkFileInfo::path() const
 
 QString DkFileInfo::dirPath() const
 {
-    if (isFromZip())
+    if (isFromContainer())
         return containerInfo().absoluteFilePath();
     else
         return d->mFileInfo.absolutePath();
@@ -263,12 +475,12 @@ bool DkFileInfo::exists() const
 
 bool DkFileInfo::isFile() const
 {
-    return isZipFile() ? false : containerInfo().isFile();
+    return isContainerFile() ? false : containerInfo().isFile();
 }
 
 bool DkFileInfo::isDir() const
 {
-    return isZipFile() ? true : d->mFileInfo.isDir();
+    return isContainerFile() ? true : d->mFileInfo.isDir();
 }
 
 bool DkFileInfo::isReadable() const
@@ -294,13 +506,31 @@ QString DkFileInfo::baseName() const
 QDateTime DkFileInfo::birthTime() const
 {
     readZipMetaData();
-    return IF_FROM_ZIP(d->mZipData.birthTime(), d->mFileInfo.birthTime());
+    readArchiveMetaData();
+#ifdef WITH_QUAZIP
+    if (isFromZip())
+        return d->mZipData.birthTime();
+#endif
+#ifdef WITH_LIBARCHIVE
+    if (isFromArchive())
+        return d->mArData.birthTime();
+#endif
+    return d->mFileInfo.birthTime();
 }
 
 QDateTime DkFileInfo::lastModified() const
 {
     readZipMetaData();
-    return IF_FROM_ZIP(d->mZipData.lastModified(), d->mFileInfo.lastModified());
+    readArchiveMetaData();
+#ifdef WITH_QUAZIP
+    if (isFromZip())
+        return d->mZipData.lastModified();
+#endif
+#ifdef WITH_LIBARCHIVE
+    if (isFromArchive())
+        return d->mArData.lastModified();
+#endif
+    return d->mFileInfo.lastModified();
 }
 
 QDateTime DkFileInfo::lastRead() const
@@ -310,7 +540,7 @@ QDateTime DkFileInfo::lastRead() const
 
 bool DkFileInfo::isModified()
 {
-    QFileInfo &info = IF_FROM_ZIP(d->mContainerInfo, d->mFileInfo);
+    QFileInfo &info = isFromContainer() ? d->mContainerInfo : d->mFileInfo;
 
     QDateTime prevModified = info.lastModified();
     bool prevExists = info.exists();
@@ -322,6 +552,10 @@ bool DkFileInfo::isModified()
 #ifdef WITH_QUAZIP
     if (modified && isFromZip())
         d->mZipData.zipFileModified(); // force reload of zip metadata
+#endif
+#ifdef WITH_LIBARCHIVE
+    if (modified && isFromArchive())
+        d->mArData.clearMetaData();
 #endif
     return modified;
 }
@@ -353,7 +587,7 @@ bool DkFileInfo::permission(QFileDevice::Permissions flags) const
 
 bool DkFileInfo::isSymLink() const
 {
-    return IF_FROM_ZIP(false, d->mFileInfo.isSymLink());
+    return isFromContainer() ? false : d->mFileInfo.isSymLink();
 }
 
 bool DkFileInfo::resolveSymLink()
@@ -373,18 +607,32 @@ QString DkFileInfo::symLinkTarget() const
 qint64 DkFileInfo::size() const
 {
     readZipMetaData();
-    return IF_FROM_ZIP(d->mZipData.size(), d->mFileInfo.size());
+    readArchiveMetaData();
+#ifdef WITH_QUAZIP
+    if (isFromZip())
+        return d->mZipData.size();
+#endif
+#ifdef WITH_LIBARCHIVE
+    if (isFromArchive())
+        return d->mArData.size();
+#endif
+    return d->mFileInfo.size();
 }
 
 void DkFileInfo::stat()
 {
-    IF_FROM_ZIP(d->mContainerInfo.stat(), d->mFileInfo.stat());
+    if (isFromContainer())
+        d->mContainerInfo.stat();
+    else
+        d->mFileInfo.stat();
+
     readZipMetaData();
+    readArchiveMetaData();
 }
 
 const QFileInfo &DkFileInfo::containerInfo() const
 {
-    return IF_FROM_ZIP(d->mContainerInfo, d->mFileInfo);
+    return isFromContainer() ? d->mContainerInfo : d->mFileInfo;
 }
 
 // remove files that have the same name but different extension
@@ -508,6 +756,44 @@ DkFileInfoList DkFileInfo::readZipArchive(const QString &zipPath)
 }
 #endif
 
+#ifdef WITH_LIBARCHIVE
+
+DkFileInfoList DkFileInfo::readArchive(const QString &arPath)
+{
+    const QString archivePath = QFileInfo(arPath).absoluteFilePath();
+    ArchiveCompressor ar(archivePath.toStdString());
+    if (!ar.lastError().empty()) {
+        qWarning() << "[FileInfo] archive: open failed:" << archivePath << QString::fromStdString(ar.lastError());
+        return {};
+    }
+
+    DkFileInfoList ret;
+    for (const auto &entry : ar) {
+        const auto &info = entry.info();
+
+        // ignore directories, links, macOS metadata, and entries without a usable path
+        if (info.path.empty() || info.path.back() == '/' || entry.isDirectory())
+            continue;
+        if (!info.symlink.empty() || !info.hardlink.empty())
+            continue;
+        if (info.path.rfind("__MACOSX/._", 0) == 0)
+            continue;
+
+        // password protected members are not supported yet; do not list them
+        if (info.encrypted) {
+            qWarning() << "[FileInfo] archive: skipping encrypted entry:" << QString::fromUtf8(info.path);
+            continue;
+        }
+
+        // content is extracted lazily by SharedData/getIODevice()
+        ret += DkFileInfo(new SharedData(archivePath, info));
+    }
+
+    return ret;
+}
+
+#endif // WITH_LIBARCHIVE
+
 DkFileInfoList DkFileInfo::readDirectory(const QString &dirPath, const QString &nameFilter)
 {
     DkTimer dt;
@@ -517,10 +803,16 @@ DkFileInfoList DkFileInfo::readDirectory(const QString &dirPath, const QString &
 
     DkFileInfoList unfiltered;
 
-#if WITH_QUAZIP
-    if (DkFileInfo(dirPath).isZipFile()) {
+    const auto dkFileInfo = DkFileInfo(dirPath);
+#ifdef WITH_QUAZIP
+    if (dkFileInfo.isZipFile())
         unfiltered = readZipArchive(dirPath);
-    } else
+    else
+#endif
+#ifdef WITH_LIBARCHIVE
+    if (dkFileInfo.isArchiveFile())
+        unfiltered = readArchive(dirPath);
+    else
 #endif
     {
         // all files, unfiltered, unsorted

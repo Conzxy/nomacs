@@ -797,7 +797,7 @@ void DkImageContainerT::fileDownloaded(const QString &filePath)
         DkFileInfo info(filePath);
         if (info.isFile()) {
             setFile(info);
-        } else if (info.isZipFile()) {
+        } else if (info.isContainerFile()) {
             emit fileLoadedSignal(false); // stop progress bar if no loadable content
             emit zipFileDownloadedSignal(info);
             return;
