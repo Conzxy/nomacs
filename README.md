@@ -11,7 +11,25 @@ nomacs is a free, open source image viewer, which supports multiple platforms. Y
 [![Downloads](https://img.shields.io/github/downloads/nomacs/nomacs/total.svg)](https://github.com/nomacs/nomacs/releases/latest)
 [![Crowdin](https://badges.crowdin.net/nomacs-neo/localized.svg)](https://crowdin.com/project/nomacs-neo)
 
+## Why Fork?
+nomacs支持`zip`文件的浏览，但是不支持`rar`文件。于是我打算自己fork一份添加对`rar`格式的支持。当然，是Coding Agent帮我改的，虽然我知道改的思路和方向（参考已有的`ZipData`），但本质上还是纯苦力活居多。
 
+## New Feature
+* 支持`rar`文件的浏览
+* 支持筛选当前打开的根目录文件列表
+
+## New dependency
+`rar`的读取是通过`libarchive`完成的，如果你是`arch`用户，那么可以：
+```shell
+# pacman -Sy libarchive
+```
+
+相关依赖的宏(`ENABLE_LIBARCHIVE`)在CMake里面可以通过设置Cache变量开启，就像`QUAZIP`一样。
+```shell
+CMake -DENABLE_LIBARCHIVE=ON ../ImageLounge
+```
+
+------------------------------------
 ## Downloads
 
 - [Latest stable release](https://github.com/nomacs/nomacs/releases/latest)
