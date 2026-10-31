@@ -329,15 +329,19 @@ bool DkSortFileProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &so
 
 bool DkSortFileProxyModel::lessThan(const QModelIndex &left, const QModelIndex &right) const
 {
-    if (left.data().canConvert(QMetaType(QMetaType::QUrl))) {
-        QFileInfo lf = QFileInfo(left.data().toString());
-        QFileInfo rf = QFileInfo(right.data().toString());
+    auto *fileModel = qobject_cast<QFileSystemModel *>(sourceModel());
 
-        // could not find a better way to tell files from dirs appart (isDir() is not what we expect)
-        if (lf.suffix().isEmpty() && !rf.suffix().isEmpty())
-            return true;
-        else if (!lf.suffix().isEmpty() && rf.suffix().isEmpty())
-            return false;
+    if (!fileModel || !left.isValid() || !right.isValid())
+        return QSortFilterProxyModel::lessThan(left, right);
+
+    const QFileInfo lf = fileModel->fileInfo(left);
+    const QFileInfo rf = fileModel->fileInfo(right);
+
+    switch (left.column()) {
+    case 0: { // filename
+        // keep directories first
+        if (lf.isDir() != rf.isDir())
+            return lf.isDir();
 
         QString ls = (!lf.fileName().isEmpty()) ? lf.fileName() : lf.absoluteFilePath(); // otherwise e.g. C: is empty
         QString rs = (!rf.fileName().isEmpty()) ? rf.fileName() : rf.absoluteFilePath();
@@ -359,6 +363,15 @@ bool DkSortFileProxyModel::lessThan(const QModelIndex &left, const QModelIndex &
         }
 
         return DkUtils::compLogicQString(ls, rs);
+    }
+    case 1: // size
+        return lf.size() < rf.size();
+    case 3: // date modified
+        // QFileSystemModel provides a localized string in DisplayRole, which cannot be compared
+        // chronologically - use the actual timestamp instead
+        return lf.lastModified() < rf.lastModified();
+    default:
+        break;
     }
 
     return QSortFilterProxyModel::lessThan(left, right);
