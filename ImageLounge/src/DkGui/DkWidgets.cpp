@@ -281,6 +281,27 @@ void DkSortFileProxyModel::setRootPath(const QString &rootPath)
 #endif
 }
 
+static bool fuzzyMatches(const QString &text, const QString &pattern)
+{
+    if (pattern.isEmpty())
+        return true;
+
+    // fast path: plain substring
+    if (text.contains(pattern, Qt::CaseInsensitive))
+        return true;
+
+    // fuzzy match: all pattern characters appear in order (e.g. "ct" matches "cat.jpg")
+    int patternIdx = 0;
+    for (const QChar &ch : text) {
+        if (ch.toCaseFolded() == pattern.at(patternIdx).toCaseFolded()) {
+            if (++patternIdx == pattern.length())
+                return true;
+        }
+    }
+
+    return false;
+}
+
 bool DkSortFileProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
 {
     if (mFilterText.isEmpty())
@@ -303,7 +324,7 @@ bool DkSortFileProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &so
             return true;
     }
 
-    return fileInfo.fileName().contains(mFilterText, Qt::CaseInsensitive);
+    return fuzzyMatches(fileInfo.fileName(), mFilterText);
 }
 
 bool DkSortFileProxyModel::lessThan(const QModelIndex &left, const QModelIndex &right) const
