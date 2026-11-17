@@ -410,16 +410,23 @@ int main(int argc, char *argv[])
     bool restoredTabs = cw->getTabs().count() > 1;
     bool loading = false;
     bool newTab = restoredTabs || nmc::DkSettingsManager::param().app().openNewTab;
+    QString startupPath;
 
     for (auto &filePath : parser.positionalArguments()) {
         if (filePath.isEmpty())
             continue;
 
+        const QString path = QDir::fromNativeSeparators(filePath);
         loading = true;
 
-        cw->loadUnique(QDir::fromNativeSeparators(filePath), newTab);
+        cw->loadUnique(path, newTab);
         newTab = true;
+        startupPath = path;
     }
+
+    // make the file explorer follow the directory/file passed on the command line
+    if (!startupPath.isEmpty())
+        w->setExplorerRoot(startupPath);
 
     // load recent files if there is nothing to display
     if (!loading && !restoredTabs && nmc::DkSettingsManager::param().app().showRecentFiles) {

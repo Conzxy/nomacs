@@ -48,9 +48,12 @@
 #include <QColorSpace>
 #include <QComboBox>
 #include <QCompleter>
+#include <QCoreApplication>
+#include <QDir>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileIconProvider>
+#include <QFileInfo>
 #include <QFileSystemModel>
 #include <QFutureWatcher>
 #include <QGuiApplication>
@@ -383,6 +386,16 @@ DkBrowseExplorer::DkBrowseExplorer(const QString &title, QWidget *parent, Qt::Wi
 {
     createLayout();
     readSettings();
+
+    // QFileSystemModel loads directories asynchronously; select the pending
+    // file once its folder is available
+    connect(mFileModel, &QFileSystemModel::directoryLoaded, this, [this](const QString &) {
+        applyPendingSelection();
+    });
+
+    // a pending restore is cancelled by the first user interaction
+    if (auto *app = QCoreApplication::instance())
+        app->installEventFilter(this);
 }
 
 DkBrowseExplorer::~DkBrowseExplorer()
@@ -406,7 +419,7 @@ void DkBrowseExplorer::scrollToCurrentClicked()
     mFileTree->scrollTo(mFileTree->currentIndex());
 }
 
-void DkBrowseExplorer::setRootPath(const QString &root)
+void DkBrowseExplorer::setRootPath(const QString &root, const QString &currentPath)
 {
     mRootPath = root;
     mSortModel->setRootPath(root);
@@ -414,6 +427,90 @@ void DkBrowseExplorer::setRootPath(const QString &root)
     mFileModel->setRootPath(root);
     mRootPathLabel->setText(root);
     mRootPathLabel->setToolTip(root);
+
+    mRestoringLastFile = false;
+    mRestorePath.clear();
+    mRestoreApplied = false;
+
+    const QString restorePath = currentPath.isEmpty() ? DkSettingsManager::lastItemInDir(root) : currentPath;
+    if (restorePath.isEmpty())
+        return;
+
+    // the file tree cannot show archive members; select the archive instead
+    const DkFileInfo restoreInfo(restorePath);
+    mRestorePath = restoreInfo.isFromContainer() ? restoreInfo.dirPath() : restorePath;
+    mRestoringLastFile = true;
+    applyPendingSelection();
+
+    // safety net in case nothing else cancels the restore
+    const quint64 restoreId = ++mRestoreId;
+    QTimer::singleShot(5000, this, [this, restoreId]() {
+        if (mRestoreId == restoreId)
+            mRestoringLastFile = false;
+    });
+}
+
+void DkBrowseExplorer::setCurrentPath(const QString &path)
+{
+    // opening a directory loads its images asynchronously; keep the restored
+    // file selected until the user starts interacting with the application
+    if (mRestoringLastFile && path != mRestorePath)
+        return;
+
+    DkExplorer::setCurrentPath(path);
+
+    if (path == mRestorePath)
+        applyPendingSelection();
+}
+
+void DkBrowseExplorer::applyPendingSelection()
+{
+    if (mRestorePath.isEmpty() || mRestoreApplied)
+        return;
+
+    const QModelIndex current = mSortModel->mapFromSource(mFileModel->index(mRestorePath));
+    if (!current.isValid()) {
+        // expand the containing folder so the model starts loading it
+        const QModelIndex dirIndex = mSortModel->mapFromSource(
+            mFileModel->index(QFileInfo(mRestorePath).absolutePath()));
+        if (dirIndex.isValid() && dirIndex != mFileTree->rootIndex())
+            mFileTree->expand(dirIndex);
+        return;
+    }
+
+    // expand the parent folders so the remembered file is actually visible
+    const QModelIndex rootIndex = mFileTree->rootIndex();
+    QModelIndex parent = current.parent();
+    while (parent.isValid() && parent != rootIndex) {
+        mFileTree->expand(parent);
+        parent = parent.parent();
+    }
+
+    mFileTree->setCurrentIndex(current);
+    mFileTree->scrollTo(current, QAbstractItemView::PositionAtCenter);
+    mRestoreApplied = true;
+}
+
+bool DkBrowseExplorer::eventFilter(QObject *watched, QEvent *event)
+{
+    Q_UNUSED(watched)
+
+    if (mRestoringLastFile) {
+        switch (event->type()) {
+        case QEvent::MouseButtonPress:
+        case QEvent::KeyPress:
+        case QEvent::Wheel:
+        case QEvent::TouchBegin:
+            mRestoringLastFile = false;
+            mRestorePath.clear();
+            mRestoreApplied = false;
+            break;
+        default:
+            break;
+        }
+    }
+
+    return DkExplorer::eventFilter(watched, event);
 }
 
 void DkBrowseExplorer::createLayout()

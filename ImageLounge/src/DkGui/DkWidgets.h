@@ -285,7 +285,7 @@ public:
 
 public slots:
     void setCurrentImage(QSharedPointer<DkImageContainerT> img);
-    void setCurrentPath(const QString &path);
+    virtual void setCurrentPath(const QString &path);
     void fileClicked(const QModelIndex &index) const;
     void showColumn(bool show);
     void setEditable(bool editable);
@@ -328,15 +328,22 @@ public:
 public slots:
     void browseClicked();
     void scrollToCurrentClicked();
-    void setRootPath(const QString &root);
+    void setRootPath(const QString &root, const QString &currentPath = QString());
+    void setCurrentPath(const QString &path) override;
 
 protected:
     void createLayout();
     void readSettings();
     void writeSettings();
+    void applyPendingSelection();
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
     QString mRootPath;
     DkElidedLabel *mRootPathLabel;
+    QString mRestorePath;
+    bool mRestoringLastFile = false;
+    bool mRestoreApplied = false;
+    quint64 mRestoreId = 0;
 };
 
 class DkOverview : public QLabel

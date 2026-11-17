@@ -30,6 +30,7 @@
 #include <QBitArray>
 #include <QColor>
 #include <QDate>
+#include <QHash>
 #include <QSettings>
 #include <QVector>
 
@@ -274,6 +275,8 @@ public:
         QStringList recentFiles;
         QStringList recentFolders;
         QStringList pinnedFiles;
+        QHash<QString, QString> lastFileForDir;
+        QHash<QString, qint64> lastFileTimeForDir;
         bool logRecentFiles;
         bool checkOpenDuplicates;
         bool openDirShowFirstImage; // show first image when opening dir, otherwise show thumbs
@@ -446,6 +449,10 @@ public:
     void init();
 
     static void importSettings(const QString &settingsPath);
+
+    // remember/query the last opened item for a directory subtree
+    static void setLastItem(const QString &path);
+    static QString lastItemInDir(const QString &dirPath);
 
 private:
     DkSettingsManager();

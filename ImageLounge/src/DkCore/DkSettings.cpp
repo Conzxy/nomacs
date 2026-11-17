@@ -27,11 +27,13 @@
 
 #include "DkSettings.h"
 
+#include "DkFileInfo.h"
 #include "DkUtils.h"
 #include "DkVersion.h"
 
 #include <QApplication>
 #include <QColorSpace>
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
 #include <QImageReader>
@@ -442,6 +444,16 @@ void DkSettings::load(QSettings &settings, bool defaults)
     global_p.recentFolders = settings.value("recentFolders", global_p.recentFolders).toStringList();
     global_p.pinnedFiles = settings.value("pinnedFiles", global_p.pinnedFiles).toStringList();
     global_p.recentFiles = settings.value("recentFiles", global_p.recentFiles).toStringList();
+
+    global_p.lastFileForDir.clear();
+    const QVariantMap lastFiles = settings.value("lastFileForDir").toMap();
+    for (auto it = lastFiles.cbegin(); it != lastFiles.cend(); ++it)
+        global_p.lastFileForDir.insert(QDir::cleanPath(it.key()), it.value().toString());
+
+    global_p.lastFileTimeForDir.clear();
+    const QVariantMap lastFileTimes = settings.value("lastFileTimeForDir").toMap();
+    for (auto it = lastFileTimes.cbegin(); it != lastFileTimes.cend(); ++it)
+        global_p.lastFileTimeForDir.insert(QDir::cleanPath(it.key()), it.value().toLongLong());
     global_p.logRecentFiles = settings.value("logRecentFiles", global_p.logRecentFiles).toBool();
     global_p.askToSaveDeletedFiles = settings.value("askToSaveDeletedFiles", global_p.askToSaveDeletedFiles).toBool();
     global_p.tmpPath = settings.value("tmpPath", global_p.tmpPath).toString();
@@ -741,6 +753,18 @@ void DkSettings::save(QSettings &settings, bool force)
         settings.setValue("recentFolders", global_p.recentFolders);
     if (force || global_p.recentFiles != global_d.recentFiles)
         settings.setValue("recentFiles", global_p.recentFiles);
+    if (force || global_p.lastFileForDir != global_d.lastFileForDir) {
+        QVariantMap lastFiles;
+        for (auto it = global_p.lastFileForDir.cbegin(); it != global_p.lastFileForDir.cend(); ++it)
+            lastFiles.insert(it.key(), it.value());
+        settings.setValue("lastFileForDir", lastFiles);
+    }
+    if (force || global_p.lastFileTimeForDir != global_d.lastFileTimeForDir) {
+        QVariantMap lastFileTimes;
+        for (auto it = global_p.lastFileTimeForDir.cbegin(); it != global_p.lastFileTimeForDir.cend(); ++it)
+            lastFileTimes.insert(it.key(), it.value());
+        settings.setValue("lastFileTimeForDir", lastFileTimes);
+    }
     if (force || global_p.pinnedFiles != global_d.pinnedFiles)
         settings.setValue("pinnedFiles", global_p.pinnedFiles);
     if (force || global_p.logRecentFiles != global_d.logRecentFiles)
@@ -1030,6 +1054,8 @@ void DkSettings::setToDefaultSettings()
     global_p.scanSubFolders = false;
     global_p.lastSaveDir = QString();
     global_p.recentFiles = QStringList();
+    global_p.lastFileForDir.clear();
+    global_p.lastFileTimeForDir.clear();
     global_p.pinnedFiles = QStringList();
     global_p.searchHistory = QStringList();
     global_p.recentFolders = QStringList();
@@ -1308,6 +1334,47 @@ void DkSettingsManager::importSettings(const QString &settingsPath)
     param().save(true);
 
     qInfo() << "settings imported...";
+}
+
+void DkSettingsManager::setLastItem(const QString &path)
+{
+    DkFileInfo info(path);
+
+    // for files this is the containing directory, for archive members the
+    // archive, and for directories their parent directory
+    const QString dirPath = info.dirPath();
+    if (dirPath.isEmpty() || info.path().isEmpty())
+        return;
+
+    DkSettings &settings = param();
+    const QString key = QDir::cleanPath(dirPath);
+    settings.global().lastFileForDir.insert(key, info.path());
+    settings.global().lastFileTimeForDir.insert(key, QDateTime::currentMSecsSinceEpoch());
+}
+
+QString DkSettingsManager::lastItemInDir(const QString &dirPath)
+{
+    const auto &global = param().global();
+    const QString root = QDir::cleanPath(dirPath);
+    const QString rootPrefix = root.endsWith('/') ? root : root + '/';
+
+    // exact match is the fallback for settings saved by older versions
+    QString result = global.lastFileForDir.value(root);
+    qint64 newest = 0;
+
+    for (auto it = global.lastFileForDir.cbegin(); it != global.lastFileForDir.cend(); ++it) {
+        const QString key = QDir::cleanPath(it.key());
+        if (key != root && !key.startsWith(rootPrefix))
+            continue;
+
+        const qint64 time = global.lastFileTimeForDir.value(it.key(), 0);
+        if (time > newest || (result.isEmpty() && time >= 0)) {
+            newest = time;
+            result = it.value();
+        }
+    }
+
+    return result;
 }
 
 // -------------------------------------------------------------------- DkFileFilterHandling

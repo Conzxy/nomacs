@@ -50,12 +50,15 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QColorSpace>
+#include <QDir>
 #include <QDragEnterEvent>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QIcon>
 #include <QInputDialog>
 #include <QMimeData>
 #include <QProcess>
+#include <QSet>
 #include <QSettings>
 #include <QStackedLayout>
 #include <QStandardPaths>
@@ -817,7 +820,8 @@ int DkCentralWidget::getActiveTab()
 
 void DkCentralWidget::imageLoaded(QSharedPointer<DkImageContainerT> img)
 {
-    Q_UNUSED(img)
+    if (img)
+        DkSettingsManager::setLastItem(img->fileInfo().path());
 
     int idx = mTabbar->currentIndex();
     if (idx < 0) {
@@ -1195,14 +1199,50 @@ void DkCentralWidget::load(const QString &path)
 
     DkFileInfo fileInfo(path);
     if (fileInfo.isDir()) {
-        loader->setCurrentDir(fileInfo);
+        auto showDefaultDirView = [&]() {
+            if (DkSettingsManager::param().global().openDirShowFirstImage)
+                showViewPort();
+            else
+                showThumbView();
+        };
 
-        if (DkSettingsManager::param().global().openDirShowFirstImage) {
+        DkFileInfo dirInfo = fileInfo;
+        QSet<QString> visited;
+        bool loadedFile = false;
+
+        while (dirInfo.isDir()) {
+            const QString dirPath = QDir::cleanPath(dirInfo.path());
+            if (visited.contains(dirPath))
+                break;
+            visited.insert(dirPath);
+
+            loader->setCurrentDir(dirInfo);
+
+            // opening a directory counts as opening that item in its parent
+            DkSettingsManager::setLastItem(dirInfo.path());
+
+            const QString lastItem = DkSettingsManager::lastItemInDir(dirInfo.path());
+            const DkFileInfo lastInfo(lastItem);
+            if (lastItem.isEmpty() || !lastInfo.exists())
+                break;
+
+            if (lastInfo.isDir()) {
+                // follow the last opened subdirectory or archive
+                dirInfo = lastInfo;
+                continue;
+            }
+
+            DkSettingsManager::setLastItem(lastInfo.path());
+            loader->load(lastInfo);
             showViewPort();
-        } else {
-            showThumbView();
+            loadedFile = true;
+            break;
         }
+
+        if (!loadedFile)
+            showDefaultDirView();
     } else {
+        DkSettingsManager::setLastItem(fileInfo.path());
         auto img = QSharedPointer<DkImageContainerT>{new DkImageContainerT{fileInfo}};
         loader->setCurrentImage(img);
         showViewPort();

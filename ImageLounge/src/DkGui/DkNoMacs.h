@@ -94,6 +94,7 @@ public:
     virtual DkCentralWidget *getTabWidget() const;
 
     void openFileEvent(const QString &filePath);
+    void setExplorerRoot(const QString &path);
 
 signals:
     void sendArrangeSignal(bool overlaid) const;
@@ -237,9 +238,13 @@ protected:
     DkTranslationUpdater *mTranslationUpdater = nullptr;
 
     QRect mOldGeometry;
+    QString mExplorerRoot;
+    QString mExplorerPath;
 
     // functions
     explicit DkNoMacs(QWidget *parent = nullptr, Qt::WindowFlags flags = Qt::WindowFlags());
+
+    void applyExplorerRoot();
 
     virtual void init();
 

@@ -1008,6 +1008,46 @@ void DkNoMacs::showExplorer(bool show, bool saveSettings)
                 mExplorer->setCurrentPath(fileInfo.path());
         }
     }
+
+    // apply the startup root after setting the current image so the remembered
+    // file (or the file passed on the command line) wins
+    applyExplorerRoot();
+}
+
+void DkNoMacs::setExplorerRoot(const QString &path)
+{
+    DkFileInfo info(path);
+    QString root;
+    QString currentPath;
+
+    if (info.isDir() && !info.isContainerFile()) {
+        root = info.path();
+    } else if (info.isFromContainer()) {
+        root = QFileInfo(info.dirPath()).absolutePath();
+        currentPath = info.dirPath();
+    } else {
+        root = info.dirPath();
+        currentPath = info.path();
+    }
+
+    if (root.isEmpty() || !QFileInfo(root).isDir())
+        return;
+
+    mExplorerRoot = root;
+    mExplorerPath = currentPath;
+    applyExplorerRoot();
+}
+
+void DkNoMacs::applyExplorerRoot()
+{
+    if (!mExplorer || mExplorerRoot.isEmpty())
+        return;
+
+    if (auto *browseExplorer = qobject_cast<DkBrowseExplorer *>(mExplorer))
+        browseExplorer->setRootPath(mExplorerRoot, mExplorerPath);
+
+    mExplorerRoot.clear();
+    mExplorerPath.clear();
 }
 
 void DkNoMacs::showMetaDataDock(bool show, bool saveSettings)
